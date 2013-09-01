@@ -20,4 +20,18 @@ Currently the libraries support both the REST and Streaming service endpoints.
 
  - The library supports JQuery 1.7.x and above
 
+## Supported Endpoints
+
+  - Authentication with user credentials
+  - Assets
+    - Realtime Streaming API for assets
+    - Retreive Stream message history for assets
+  - Message
+    - All detailed information about a message
+  - Search
+  - User Management
+    - Add/Remove subscriptions
+    - Add/Remove favourties
+
+
 Copyrite &copy; fswire.com, fswire Ltd, all rights reserved

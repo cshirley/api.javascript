@@ -2,11 +2,9 @@ api.javascript
 ==============
 
 ## Overview
-Base Framework Client for fswire using angularjs or jquery and fswire server api.
+Base Framework Client for fswire using Angularjs or JQuery and fswire server api.  This is intended to be a fully disconnected client that will leverage the full fswire.com api.
 
-This is intended to be a fully disconnected client that will leverage the full fswire.com api.
-
-Currently the libraries support both the REST and Streaming service endpoints.
+Currently the libraries support both the REST and Streaming service endpoints with full functionality.
 
 ## Requirements
 

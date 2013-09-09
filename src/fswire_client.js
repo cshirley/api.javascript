@@ -45,7 +45,7 @@ String.prototype.highlight_currency = function() {
     return this.replace(/(^|\s)(\$|£)([\d,.]+)/g, "$1<span class='chat.currency'>$2$3</span>");
 };
 String.prototype.highlight_room = function() {
-    return this.replace(/(^|\s)([#|$])(\w+([.|-]?\w+)*)/g, "$1<a chat-id='$3' command='view-room' class='command'>$2$3</a>");
+    return this.replace(/(^|\s)([#|$])(\w+([.|-]?\w+))/g, "$1<a chat-id='$3' command='view-room' class='command'>$2$3</a>");
 };
 String.prototype.twitterfy_message = function() {
     return this.replace(/(^|\s)@(\w+)/g, "$1<a twitter-screen-name='$2' command='view-twitter-user-profile' class='command'>@$2</a>");
@@ -109,19 +109,66 @@ $.fn.addCommand = function(pattern, command, commandDataAttributeName, cssname) 
 };
 
 var fswire = fswire || {};
-
-function FSwireClient(user_id, unique_id, is_admin, is_cleaner) {
-
+function FSWireClient(user_id, unique_id, is_admin, is_cleaner) {
+    new fswire.Client({user_id:user_id, unique_id:unique_id, is_admin:is_admin, is_cleaner:is_cleaner });
+}
+fswire.Client = function(options) {
     var self = this;
-    this.api_root = '/api/v1';
-    this.debug = false;
-    this.is_admin = is_admin;
-    this.is_cleaner = is_cleaner;
-    this.unique_id = unique_id;
+    this.settings = $.extend({  user_id:0,
+                                user_name:null,
+                                password: null,
+                                is_admin:false,
+                                is_cleaner:false,
+                                auth_token:null,
+                                unique_id:null,
+                                debug:false,
+                                after_logon:null }, options);
+
+    this.api_root = 'http://' + this.settings.host + '/api/v1';
+
+    this.credentials = function() {
+        return null !== self.settings.auth_token ? 'auth_token='+ self.settings.auth_token : '?db=' + self.settings.unique_id;
+    };
+    this.Session = {
+        client:this,
+        logon_with_credentials:function(user_name, password) {
+            var self = this;
+
+            if (null !== self.client.settings.auth_token) {
+                if (self.client.settings.after_logon)
+                    self.client.settings.after_logon();
+                return;
+            }
+
+            params = { user_login : { email: user_name, password:password } };
+
+            $.ajax({ type: 'POST',
+                    crossDomain: true,
+                    url: 'http://' + self.client.settings.host + '/api/users/sign_in.json' ,
+                    dataType: "json",
+                    data: params,
+                    success: function(responseData, textStatus, jqXHR) {
+                                self.client.settings.auth_token = responseData.auth_token;
+                                self.client.settings.user_id = responseData.id;
+                                self.client.settings.is_admin = responseData.is_admin;
+                                self.client.settings.is_cleaner = responseData.is_cleaner;
+
+                                if (self.client.settings.after_logon)
+                                    self.client.settings.after_logon();
+                            }
+                    });
+        },
+        logon:function() {
+            this.logon_with_credentials(this.client.settings.user_name, this.client.settings.password);
+        },
+        logout:function() {
+
+        }
+    },
     this.current_user = {
         client:this,
-        id:user_id,
-        build_url:function(action) { return this.client.api_root + '/users/' + this.id.toString() + '/' + action + '?db=' + this.client.unique_id;},
+        id:this.settings.user_id,
+        build_url:function(action) { return this.client.api_root + '/users/' + this.id.toString() + '/' + action + '?' + this.client.credentials() ;},
         streams: {
             client:this,
             add:function(id, callback) { var self = this;
@@ -145,11 +192,11 @@ function FSwireClient(user_id, unique_id, is_admin, is_cleaner) {
             remove_favourite:function(id, callback) { var self = this; $.ajax({ url: self.client.current_user.build_url('messages/favourties/' + id), type: 'DELETE', dataType: 'json', data: '', success:callback}); }
         }
 
-    };
+    },
     this.Messages = {
         client:this,
         remove:function(id, callback) { var self = this;
-            if (!self.client.is_admin) return;
+            if (!self.client.settings.is_admin) return;
             $.ajax({url: self.client.api_root + '/messages/' + id +'/delete', type: 'delete', dataType: 'json', data: '', success: callback});}
 
     },
@@ -162,62 +209,28 @@ function FSwireClient(user_id, unique_id, is_admin, is_cleaner) {
                                 '?query_day_period='  + params.days.toString() +
                                 '&ssi_day_lag=' + params.ssi_lag.toString() +
                                 '&ssi_ma_day_range=' + params.ssi_volume_ma.toString() +
-                                '&db=' + self.client.unique_id; },
+                                '&' + self.client.credentials(); },
         find_by_id:function(id, callback) { var self = this; $.getJSON(self.client.api_root + "/streams/" + id.toString(), {}, callback); },
         search:function(search_text, callback) { var self = this; $.getJSON(self.client.api_root + "/streams/search", { id:search_text }, callback); },
         support:function(callback) { var self = this; $.getJSON( self.client.api_root + '/streams/support.json', callback); },
         history:function(id, last_id, only_messages_with_urls, callback) {
             var self = this;
-            var params = null !== last_id ? {before:last_id, db:self.client.unique_id, urls_only:only_messages_with_urls} : {urls_only:only_messages_with_urls, db:self.client.unique_id};
+            var params = null !== last_id ? {before:last_id, db:self.client.settings.unique_id, urls_only:only_messages_with_urls} : {urls_only:only_messages_with_urls, db:self.client.settings.unique_id, auth_token:self.client.settings.auth_token};
             $.getJSON( self.client.api_root + '/streams/' + id.toString() +'/history.json', params, callback); },
         sentiment_day_summary_moving_ave:function(id, params, callback){},
         sentiment_day_summary:function(id, params, callback){var self = this; $.getJSON(self.build_url(id, 'sentiment_day_summary', params), callback);},
         volume_day_summary:function(id, params, callback){},
         ssi:function(id, params, callback){var self = this; $.getJSON(self.build_url(id, 'ssi', params), callback);},
-        links:function(id, params, callback){},
+        links:function(id, params, callback){var self = this; $.getJSON(self.build_url(id, 'links', params), callback);},
         price:function(id, params, callback){var self = this; $.getJSON(self.build_url(id, 'price', params), callback); },
         trending_links:function(id, params, callback){}
     };
     this.Search = {
         client:this,
-        find:function(search_text, last_timestamp, callback){
-            var self = this;
-            if(last_timestamp=='')
-            	this.SearchLinkRequest=$.getJSON(self.client.api_root + '/search.json?q=' + search_text, callback);
-            else {
-           		var t=Math.round(Date.parse(last_timestamp) / 1000);
-           		this.SearchLinkRequest=$.getJSON(self.client.api_root + '/search.json?q=' + search_text +'&before='+t, callback);
-           	}
+        find:function(search_text, page, callback){
+            var self = this; $.getJSON(self.client.api_root + '/search.json?q=' + search_text + '&page=' + page.toString() + '&' + self.client.credentials(), callback);
         }
     };
-    this.SearchNewLink = {
-        client:this,
-        find:function(search_text, new_timestamp, callback){
-            var self = this; 
-            var t=Math.round(Date.parse(new_timestamp) / 1000);
-            this.SearchNewLinkRequest=$.getJSON(self.client.api_root + '/search.json?q=' + search_text +'&after='+t, callback);                        
-        }
-    };
-    this.SearchMessage = {
-        client:this,
-        find:function(search_text, last_timestamp, callback){
-            var self = this; 
-            if(last_timestamp=='')
-            	this.SearchMessageRequest=$.getJSON(self.client.api_root + '/search.json?type=messages&q=' + search_text, callback);
-            else {
-	       		var t=Math.round(Date.parse(last_timestamp) / 1000);
-            	this.SearchMessageRequest=$.getJSON(self.client.api_root + '/search.json?type=messages&q=' + search_text +'&before='+t, callback);
-            }            
-        }
-    };
-    this.SearchNewMessage = {
-        client:this,
-        find:function(search_text, new_timestamp, callback){
-            var self = this; 
-            var t=Math.round(Date.parse(new_timestamp) / 1000);
-            this.SearchNewMessageRequest=$.getJSON(self.client.api_root + '/search.json?type=messages&q=' + search_text +'&after='+t, callback);                        
-        }
-    };    
     $(document).ajaxError(function(event, request, settings) {
         if (request.status == 403) {
             showFailureMessage(jQuery.parseJSON(request.responseText).description);
@@ -260,14 +273,5 @@ function FSwireClient(user_id, unique_id, is_admin, is_cleaner) {
         }
     };
 
-}
-function showFailureMessage(text) {
-    if($("#flash_alert").length < 1)
-        $("body").append("<div id='flash_alert'>" + text + "</div>");
-    else
-        $("#flash_alert").html(text);
+};
 
-    $("#flash_alert").show('slow');
-
-    setTimeout('$("#flash_alert").hide("slow")',5000);
-}
